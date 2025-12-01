@@ -25,7 +25,7 @@ SECRET_KEY = 'django-insecure-_6)6g9$zvmma=o$4$*2u4)j9hv_xyibcck318t4(87lt01j9zl
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['shinova.in','shinova.in1.cloudlets.co.in']
+ALLOWED_HOSTS = ["*"]
 
 
 # Application definition

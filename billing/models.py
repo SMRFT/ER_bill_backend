@@ -10,7 +10,8 @@ class ERBilling(models.Model):
     phonenumber = models.CharField(max_length=20,blank=True, null=True)
     billnumber = models.CharField(primary_key=True,max_length=50)
     doctorname = models.CharField(max_length=150,blank=True, null=True)
-    date = models.DateField()
+    date = models.DateTimeField(auto_now_add=True)
+
 
     # ONLY PROCEDURES STORED AS JSON
     procedures = models.JSONField() 
