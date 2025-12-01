@@ -1,12 +1,14 @@
 PAGE_MAPPING = {
 
-    '/_b_a_c_k_e_n_d/ER/erbilling/': 'ER-P-ERB',
-    '/_b_a_c_k_e_n_d/ER/doctorlist/': 'ER-P-ERDL',
-    '/_b_a_c_k_e_n_d/ER/procedurelist/': 'ER-P-ERPL',
-    r'^/_b_a_c_k_e_n_d/ER/update-status/?(\?.*)?$': 'ER-P-ERUS',
-    '/_b_a_c_k_e_n_d/ER/Pharmacy/': 'ER-P-ERP',
-    r'^/_b_a_c_k_e_n_d/ER/printbill/?(\?.*)?$': 'ER-P-ERPB',
-    r'^/_b_a_c_k_e_n_d/ER/AccountSummary/?(\?.*)?$': 'ER-P-ERAS',
+    '/_b_a_c_k_e_n_d/ERBilling/erbilling/': 'ER-P-ERB',
+    '/_b_a_c_k_e_n_d/ERBilling/doctorlist/': 'ER-P-ERDL',
+    '/_b_a_c_k_e_n_d/ERBilling/procedurelist/': 'ER-P-ERPL',
+    r'^/_b_a_c_k_e_n_d/ERBilling/update-status(?:/[^/]+)+/$': 'ER-P-ERUS',
+    r'^/_b_a_c_k_e_n_d/ERBilling/printbill/?(\?.*)?$': 'ER-P-ERPB',
+    r'^/_b_a_c_k_e_n_d/ERBilling/AccountSummary/?(\?.*)?$': 'ER-P-ERAS',
+    r'^/_b_a_c_k_e_n_d/ERBilling/Pharmacy/?(\?.*)?$': 'ER-P-ERP',
+ 
+ 
 
 
     '/erbilling/': 'ER-P-ERB',

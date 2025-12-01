@@ -53,18 +53,25 @@ def get_procedure_list(request):
 def get_er_billing(request):
     date_param = request.GET.get("date")
 
-    # If date is passed → convert to Python date
     if date_param:
         try:
-            filter_date = datetime.strptime(date_param, "%Y-%m-%d").date()
+            filter_date = datetime.strptime(date_param, "%Y-%m-%d")
         except ValueError:
             return JsonResponse({"error": "Invalid date format"}, status=400)
     else:
-        filter_date = timezone.now().date()  # Today's date
+        today_str = timezone.now().strftime("%Y-%m-%d")
+        filter_date = datetime.strptime(today_str, "%Y-%m-%d")
 
-    bills = ERBilling.objects.filter(date=filter_date).order_by("date")
+    # MongoDB-compatible range filtering
+    start_datetime = filter_date
+    end_datetime = filter_date + timedelta(days=1)
+
+    bills = ERBilling.objects.filter(
+        date__gte=start_datetime,
+        date__lt=end_datetime
+    ).order_by("date")
+
     serializer = ERBillingSerializer(bills, many=True)
-
     return JsonResponse(serializer.data, safe=False)
 
 @api_view(['PUT'])
