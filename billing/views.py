@@ -13,15 +13,29 @@ from datetime import datetime, timedelta
 from rest_framework.response import Response
 from django.utils.dateparse import parse_date
 
-
 @api_view(["POST"])
 @permission_classes([HasRolePermission])
 def er_billing(request):
-    serializer = ERBillingSerializer(data=request.data)
+    data = request.data
+
+    # Extract employee ID (same as your register API logic)
+    employee_id = data.get("auth-user-id")
+
+    serializer = ERBillingSerializer(data=data)
+
     if serializer.is_valid():
-        serializer.save()
-        return Response({"message": "Billing saved successfully", "data": serializer.data})
+        serializer.save(
+            created_by=employee_id,
+            created_date=datetime.now()
+        )
+
+        return Response({
+            "message": "Billing saved successfully",
+            "data": serializer.data
+        })
+
     return Response(serializer.errors, status=400)
+
 
 
 
@@ -48,110 +62,117 @@ def get_procedure_list(request):
     return JsonResponse(procedurelist, safe=False)
 
 # er_billing/views.py
+from datetime import datetime
+from django.http import JsonResponse
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.parsers import JSONParser
+from .models import ERBilling
+from .serializers import ERBillingSerializer
+
 @api_view(['GET'])
 @permission_classes([HasRolePermission])
 def get_er_billing(request):
-    date_param = request.GET.get("date")
-
-    if date_param:
-        try:
-            filter_date = datetime.strptime(date_param, "%Y-%m-%d")
-        except ValueError:
-            return JsonResponse({"error": "Invalid date format"}, status=400)
-    else:
-        today_str = timezone.now().strftime("%Y-%m-%d")
-        filter_date = datetime.strptime(today_str, "%Y-%m-%d")
-
-    # MongoDB-compatible range filtering
-    start_datetime = filter_date
-    end_datetime = filter_date + timedelta(days=1)
-
-    bills = ERBilling.objects.filter(
-        date__gte=start_datetime,
-        date__lt=end_datetime
-    ).order_by("date")
-
-    serializer = ERBillingSerializer(bills, many=True)
+    # Read from query params, not body
+    date_str = request.GET.get("date")  # <-- Changed from JSONParser
+    
+    if not date_str:
+        date_str = datetime.utcnow().strftime("%Y-%m-%d")
+    
+    selected_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+    
+    # Fetch ALL and filter in Python (MongoDB-safe)
+    all_bills = ERBilling.objects.all().order_by("-date")
+    
+    filtered = []
+    for bill in all_bills:
+        bill_date = bill.date.date()  # convert Mongo datetime → date only
+        if bill_date == selected_date:
+            filtered.append(bill)
+    
+    serializer = ERBillingSerializer(filtered, many=True)
     return JsonResponse(serializer.data, safe=False)
+
+
+from rest_framework.decorators import api_view, permission_classes,parser_classes
+from rest_framework.response import Response
+from django.shortcuts import get_object_or_404
+
+from rest_framework.parsers import JSONParser
 
 @api_view(['PUT'])
 @permission_classes([HasRolePermission])
+@parser_classes([JSONParser])
 def update_billing_status(request, uhid):
     bill = get_object_or_404(ERBilling, uhid=uhid)
-    bill.billing_status = "paid"
+
+    # Same logic used in ER Register API
+    employee_id = request.data.get("auth-user-id")
+    print(employee_id)
+
+    # Extract the actual payload under "data"
+    payload = request.data.get("data", {})
+
+    payment_mode = payload.get("payment_mode")
+    billing_status = payload.get("billing_status")
+
+    if payment_mode is None:
+        return Response({"error": "payment_mode is required"}, status=400)
+
+    # Update fields
+    bill.payment_mode = payment_mode
+    bill.billing_status = billing_status
+
+    # SAME STYLE YOU USED FOR REGISTER
+    bill.lastmodified_by = employee_id
+    bill.lastmodified_date = datetime.now()
+
     bill.save()
-    
-    return Response({"message": f"Billing status for UHID {uhid} updated to Billed"})
 
+    return Response({
+        "message": "Updated successfully",
+        "lastmodified_by": bill.lastmodified_by,
+        "lastmodified_date": bill.lastmodified_date
+    })
 
+from django.utils import timezone
 @api_view(["GET"])
 @permission_classes([HasRolePermission])
 def get_account_summary(request):
-    day = request.GET.get("day")
-    month = request.GET.get("month")
+    from_date = request.GET.get("from_date")
+    to_date = request.GET.get("to_date")
+    payment_mode = request.GET.get("payment_mode")
 
     queryset = ERBilling.objects.filter(billing_status="paid")
 
     # -----------------------------
-    # 1️⃣ DAY FILTER (YYYY-MM-DD)
+    # FROM - TO DATE FILTER
     # -----------------------------
-    if day:
-        parsed = parse_date(day)
-        if parsed:
-            start = datetime(parsed.year, parsed.month, parsed.day)
-            end = start + timedelta(days=1)
-
-            queryset = queryset.filter(
-                date__gte=start,
-                date__lt=end
-            )
-
-    # -----------------------------
-    # 2️⃣ MONTH FILTER (YYYY-MM)
-    # -----------------------------
-    elif month:
+    if from_date and to_date:
         try:
-            year, mon = month.split("-")
-            year = int(year)
-            mon = int(mon)
+            start = timezone.make_aware(datetime.strptime(from_date, "%Y-%m-%d"))
+            end = timezone.make_aware(datetime.strptime(to_date, "%Y-%m-%d")) + timedelta(days=1)
 
-            start = datetime(year, mon, 1)
-
-            # calculate next month
-            if mon == 12:
-                end = datetime(year + 1, 1, 1)
-            else:
-                end = datetime(year, mon + 1, 1)
-
-            queryset = queryset.filter(
-                date__gte=start,
-                date__lt=end
-            )
+            queryset = queryset.filter(date__gte=start, date__lt=end)
 
         except Exception as e:
-            return Response({"error": str(e)}, status=400)
+            return Response({"error": f"Invalid date format: {str(e)}"}, status=400)
 
     # -----------------------------
-    # 3️⃣ DEFAULT → CURRENT MONTH
+    # PAYMENT MODE FILTER (FIXED)
     # -----------------------------
-    else:
-        today = datetime.today()
+    if payment_mode and payment_mode != "all":
+        
+        # Null payment mode filter
+        if payment_mode == "null":
+            queryset = queryset.filter(payment_mode__isnull=True)
 
-        start = datetime(today.year, today.month, 1)
-
-        # calculate first date of next month
-        if today.month == 12:
-            end = datetime(today.year + 1, 1, 1)
         else:
-            end = datetime(today.year, today.month + 1, 1)
-
-        queryset = queryset.filter(
-            date__gte=start,
-            date__lt=end
-        )
+            # JSON text match (ex: "[{"method":"upi"}]")
+            queryset = queryset.filter(payment_mode__icontains=payment_mode.lower())
 
     serializer = ERBillingSerializer(queryset, many=True)
     return Response(serializer.data)
+
 
 @api_view(['GET'])
 @permission_classes([HasRolePermission])
@@ -170,8 +191,8 @@ def printbill(request):
     start = datetime(selected.year, selected.month, selected.day)
     end = start + timedelta(days=1)
 
+    # ❌ Removed billing_status="Billed"
     bills = ERBilling.objects.filter(
-        billing_status="Billed",
         date__gte=start,
         date__lt=end
     ).order_by("date")
