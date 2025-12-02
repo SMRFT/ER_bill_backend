@@ -44,8 +44,8 @@ def er_billing(request):
 def get_doctor_list(request):
     mongo_url = os.getenv("GLOBAL_DB_HOST")
     client = MongoClient(mongo_url)
-    db = client["ER"]
-    collection = db["er_doctors"]
+    db = client["ER_Billing"]
+    collection = db["doctors_list"]
 
     doctors = list(collection.find({"is_active": True}, {"_id": 0}))
     return JsonResponse(doctors, safe=False)
@@ -55,7 +55,7 @@ def get_doctor_list(request):
 def get_procedure_list(request):
     mongo_url = os.getenv("GLOBAL_DB_HOST")
     client = MongoClient(mongo_url)
-    db = client["ER"]
+    db = client["ER_Billing"]
     collection = db["er_procedurelist"]
 
     procedurelist = list(collection.find({}, {"_id": 0}))
