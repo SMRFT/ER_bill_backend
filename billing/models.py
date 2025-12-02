@@ -11,7 +11,7 @@ class ERBilling(models.Model):
     billnumber = models.CharField(primary_key=True,max_length=50)
     doctorname = models.CharField(max_length=150,blank=True, null=True)
     date = models.DateTimeField(auto_now_add=True)
-
+    payment_mode = models.JSONField(null=True, blank=True)
 
     # ONLY PROCEDURES STORED AS JSON
     procedures = models.JSONField() 
@@ -22,9 +22,11 @@ class ERBilling(models.Model):
     discount_amount = models.FloatField(max_length=10,blank=True, null=True)             # calculated amount
 
     total = models.FloatField()
-    discounted_total = models.FloatField(max_length=10,blank=True, null=True)
+    net_amount = models.FloatField(max_length=10,blank=True, null=True)
     created_by = models.CharField(max_length=100, blank=True, null=True)
     created_date = models.DateTimeField(auto_now_add=True)
+    lastmodified_by = models.CharField(max_length=100, blank=True, null=True)
+    lastmodified_date = models.DateTimeField(auto_now_add=True)
     billing_status = models.CharField(max_length=10,default="Billed")
     def __str__(self):
         return f"{self.patientname} - {self.billnumber}"
