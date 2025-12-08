@@ -9,5 +9,6 @@ urlpatterns = [
     re_path(r"^update-status/(?P<uhid>.+)/$", views.update_billing_status),
     path("AccountSummary/", views.get_account_summary),
     path("printbill/", views.printbill),
+    path("get_next_bill_number/", views.get_next_bill_number),
 
 ]

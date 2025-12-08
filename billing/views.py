@@ -17,14 +17,34 @@ from django.utils.dateparse import parse_date
 @permission_classes([HasRolePermission])
 def er_billing(request):
     data = request.data
-
-    # Extract employee ID (same as your register API logic)
     employee_id = data.get("auth-user-id")
+
+    # Auto generate billnumber here
+    current_year = datetime.now().year % 100
+    next_year = (datetime.now().year + 1) % 100
+    prefix = f"{current_year:02d}{next_year:02d}"
+
+    latest = (
+        ERBilling.objects.filter(billnumber__startswith=prefix)
+        .order_by("-billnumber")
+        .first()
+    )
+
+    if latest:
+        try:
+            last_num = int(latest.billnumber.split("/")[-1])
+        except:
+            last_num = 0
+    else:
+        last_num = 0
+
+    new_billnumber = f"{prefix}/{last_num + 1:02d}"
 
     serializer = ERBillingSerializer(data=data)
 
     if serializer.is_valid():
         serializer.save(
+            billnumber=new_billnumber,
             created_by=employee_id,
             created_date=datetime.now()
         )
@@ -35,6 +55,7 @@ def er_billing(request):
         })
 
     return Response(serializer.errors, status=400)
+
 
 
 
@@ -199,3 +220,36 @@ def printbill(request):
 
     serializer = ERBillingSerializer(bills, many=True)
     return Response(serializer.data)
+
+
+
+
+@api_view(['GET'])
+
+
+# @permission_classes([HasRolePermission])
+def get_next_bill_number(request):
+    current_year = datetime.now().year % 100
+    next_year = (datetime.now().year + 1) % 100
+    prefix = f"{current_year:02d}{next_year:02d}"
+
+    # Get latest bill with prefix → order by number
+    latest_bill = (
+        ERBilling.objects.filter(billnumber__startswith=prefix)
+        .order_by("-billnumber")
+        .first()
+    )
+
+    if latest_bill:
+        try:
+            last_num = int(latest_bill.billnumber.split("/")[-1])
+        except:
+            last_num = 0
+    else:
+        last_num = 0
+
+    next_number = last_num + 1
+    next_bill = f"{prefix}/{next_number:02d}"
+
+    return Response({"billNumber": next_bill})
+
