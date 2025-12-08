@@ -227,7 +227,7 @@ def printbill(request):
 @api_view(['GET'])
 
 
-# @permission_classes([HasRolePermission])
+@permission_classes([HasRolePermission])
 def get_next_bill_number(request):
     current_year = datetime.now().year % 100
     next_year = (datetime.now().year + 1) % 100
