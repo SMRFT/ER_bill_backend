@@ -4,7 +4,7 @@ PAGE_MAPPING = {
     '/_b_a_c_k_e_n_d/ERBilling/doctorlist/': 'ER-P-ERDL',
     '/_b_a_c_k_e_n_d/ERBilling/procedurelist/': 'ER-P-ERPL',
     '/_b_a_c_k_e_n_d/ERBilling/get_next_bill_number/': 'ER-P-ERGNBN',
-    '/_b_a_c_k_e_n_d/ERBilling/erreport/': 'ER-P-ERREP',
+    '/_b_a_c_k_e_n_d/ERBilling/er_report/': 'ER-P-ERREP',
     r'^/_b_a_c_k_e_n_d/ERBilling/update-status(?:/[^/]+)+/$': 'ER-P-ERUS',
     r'^/_b_a_c_k_e_n_d/ERBilling/printbill/?(\?.*)?$': 'ER-P-ERPB',
     r'^/_b_a_c_k_e_n_d/ERBilling/AccountSummary/?(\?.*)?$': 'ER-P-ERAS',

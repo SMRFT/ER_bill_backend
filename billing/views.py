@@ -264,12 +264,13 @@ from .models import ERBilling
 from .serializers import ERBillingSerializer
 
 
-@api_view(["GET"])
+@api_view(["POST"])
 @permission_classes([HasRolePermission])
 def er_report(request):
     try:
-        from_date = request.GET.get("from_date")
-        to_date = request.GET.get("to_date")
+        # ✅ Read from payload
+        from_date = request.data.get("from_date")
+        to_date = request.data.get("to_date")
 
         if not from_date or not to_date:
             return Response({
@@ -277,6 +278,7 @@ def er_report(request):
                 "message": "from_date and to_date are required"
             }, status=400)
 
+        # ✅ Payload format: YYYY-MM-DD
         start_date = datetime.strptime(from_date, "%Y-%m-%d")
         end_date = datetime.strptime(to_date, "%Y-%m-%d")
         end_date = end_date.replace(hour=23, minute=59, second=59)
@@ -292,9 +294,11 @@ def er_report(request):
         patients = []
 
         for item in serializer.data:
-            if item.get("gender") == "Male":
+            gender = (item.get("gender") or "").lower()
+
+            if gender == "male":
                 male += 1
-            elif item.get("gender") == "Female":
+            elif gender == "female":
                 female += 1
 
             patients.append({
