@@ -11,5 +11,5 @@ urlpatterns = [
     path("printbill/", views.printbill),
     path("er_report/", views.er_report),
     path("get_next_bill_number/", views.get_next_bill_number),
-    # re_path(r"^erreport/$", views.er_report),
+
 ]
