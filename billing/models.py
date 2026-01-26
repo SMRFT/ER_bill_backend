@@ -5,7 +5,7 @@ from django.db import models
 class ERBilling(models.Model):
     uhid = models.CharField(max_length=50)
     patientname = models.CharField(max_length=150)
-    age = models.IntegerField()
+    age = models.CharField(max_length=50,blank=True,null=True)
     gender = models.CharField(max_length=20,blank=True, null=True)
     phonenumber = models.CharField(max_length=20,blank=True, null=True)
     billnumber = models.CharField(primary_key=True,max_length=50)
