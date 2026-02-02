@@ -5,10 +5,14 @@ PAGE_MAPPING = {
     '/_b_a_c_k_e_n_d/ERBilling/procedurelist/': 'ER-P-ERPL',
     '/_b_a_c_k_e_n_d/ERBilling/get_next_bill_number/': 'ER-P-ERGNBN',
     '/_b_a_c_k_e_n_d/ERBilling/er_report/': 'ER-P-ERREP',
-    r'^/_b_a_c_k_e_n_d/ERBilling/update-status(?:/[^/]+)+/$': 'ER-P-ERUS',
-    r'^/_b_a_c_k_e_n_d/ERBilling/printbill/?(\?.*)?$': 'ER-P-ERPB',
+      r'^/_b_a_c_k_e_n_d/ERBilling/printbill/?(\?.*)?$': 'ER-P-ERPB',
+
+
+    r'^/_b_a_c_k_e_n_d/ERBilling/update-status(?:/[^/]+)+/$': 'ER-P-ERUS', 
     r'^/_b_a_c_k_e_n_d/ERBilling/AccountSummary/?(\?.*)?$': 'ER-P-ERAS',
     r'^/_b_a_c_k_e_n_d/ERBilling/Pharmacy/?(\?.*)?$': 'ER-P-ERP',
+    '/_b_a_c_k_e_n_d/ERBilling/shiftdetails/': 'ER-P-ERSD',
+    '/_b_a_c_k_e_n_d/ERBilling/get_active_shift/': 'ER-P-ERGAS',
  
  
 
@@ -21,6 +25,8 @@ PAGE_MAPPING = {
     '/AccountSummary/': 'ER-P-ERAS',
     '/printbill/': 'ER-P-ERPB',
     '/erreport/':'ER-P-ERREP',
+    'shiftdetails/':'ER-P-ERSD',
+    'get_active_shift/': 'ER-P-ERGAS',
     
 }
 
