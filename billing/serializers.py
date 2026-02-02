@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import ERBilling
+from .models import ERBilling,Shiftdetails
 from bson import ObjectId
 
 
@@ -11,8 +11,16 @@ class ObjectIdField(serializers.Field):
         return str(data)
 
 class ERBillingSerializer(serializers.ModelSerializer):
-    id = ObjectIdField(read_only=True)  # :point_left: Add this line to use custom field
+    id = ObjectIdField(read_only=True)  
     
     class Meta:
         model = ERBilling
+        fields = "__all__"
+
+
+class ShiftdetailsSerializer(serializers.ModelSerializer):
+    id = ObjectIdField(read_only=True)
+
+    class Meta:
+        model = Shiftdetails
         fields = "__all__"
