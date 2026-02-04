@@ -13,6 +13,7 @@ PAGE_MAPPING = {
     r'^/_b_a_c_k_e_n_d/ERBilling/Pharmacy/?(\?.*)?$': 'ER-P-ERP',
     '/_b_a_c_k_e_n_d/ERBilling/shiftdetails/': 'ER-P-ERSD',
     '/_b_a_c_k_e_n_d/ERBilling/get_active_shift/': 'ER-P-ERGAS',
+    '/_b_a_c_k_e_n_d/ERBilling/get_pharmacist_shiftreport/':'ER-P-ERGPR',
  
  
 
@@ -27,6 +28,7 @@ PAGE_MAPPING = {
     '/erreport/':'ER-P-ERREP',
     'shiftdetails/':'ER-P-ERSD',
     'get_active_shift/': 'ER-P-ERGAS',
+    'get_pharmacist_shiftreport/':'ER-P-ERGPR',
     
 }
 
