@@ -120,17 +120,21 @@ from django.shortcuts import get_object_or_404
 
 from rest_framework.parsers import JSONParser
 
+from datetime import datetime
+from pymongo import MongoClient
+import os
+
+from datetime import datetime
+from pymongo import MongoClient
+import os
+
 @api_view(['PUT'])
 @permission_classes([HasRolePermission])
 @parser_classes([JSONParser])
 def update_billing_status(request, billnumber):
     bill = get_object_or_404(ERBilling, billnumber=billnumber)
 
-    # Same logic used in ER Register API
     employee_id = request.data.get("auth-user-id")
-    print(employee_id)
-
-    # Extract the actual payload under "data"
     payload = request.data.get("data", {})
 
     payment_mode = payload.get("payment_mode")
@@ -139,21 +143,54 @@ def update_billing_status(request, billnumber):
     if payment_mode is None:
         return Response({"error": "payment_mode is required"}, status=400)
 
-    # Update fields
+    # ==========================================================
+    # 🔴 STEP 1: CHECK ACTIVE SHIFT BEFORE ALLOWING PAYMENT
+    # ==========================================================
+    mongo_url = os.getenv("GLOBAL_DB_HOST")
+    client = MongoClient(mongo_url)
+    db = client["ER_Billing"]
+    shift_collection = db["er_shiftdetails"]
+
+    active_shift = shift_collection.find_one({"is_active": True})
+
+    # ❌ BLOCK PAYMENT IF NO ACTIVE SHIFT
+    if billing_status and billing_status.lower() == "paid" and not active_shift:
+        return Response({
+            "error": "No active shift. Please start the shift before processing payment."
+        }, status=400)
+
+    previous_status = bill.billing_status
+
+    # ==========================================================
+    # COMMON UPDATES
+    # ==========================================================
     bill.payment_mode = payment_mode
     bill.billing_status = billing_status
-
-    # SAME STYLE YOU USED FOR REGISTER
     bill.lastmodified_by = employee_id
     bill.lastmodified_date = datetime.now()
+
+    # ==========================================================
+    # ✅ WHEN STATUS CHANGES FROM BILLED → PAID
+    # ==========================================================
+    if previous_status.lower() == "billed" and billing_status.lower() == "paid":
+
+        # Save pharmacist id
+        bill.pharmacist_id = employee_id
+
+        # Attach shift number (guaranteed exists because we blocked above)
+        bill.shiftno = active_shift.get("shiftno")
 
     bill.save()
 
     return Response({
         "message": "Updated successfully",
+        "billing_status": bill.billing_status,
+        "pharmacist_id": getattr(bill, "pharmacist_id", None),
+        "shiftno": getattr(bill, "shiftno", None),
         "lastmodified_by": bill.lastmodified_by,
         "lastmodified_date": bill.lastmodified_date
     })
+
 
 import os
 import json
@@ -185,43 +222,33 @@ def get_shift_account_summary(request):
         end_day = datetime.strptime(to_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
         date_filter = {"starttime": {"$gte": start_day, "$lte": end_day}}
 
+    # Only CLOSED shifts
     shifts = list(shift_collection.find({**date_filter, "is_active": False}).sort("starttime", -1))
 
     response_data = []
 
     for shift in shifts:
+        shift_no = shift.get("shiftno")
         employee_id = str(shift.get("created_by"))
 
-        # ✅ Employee lookup safe
+        # Employee Name Lookup
         profile = profile_collection.find_one({
             "$or": [
                 {"employeeId": employee_id},
                 {"employeeId": int(employee_id) if employee_id.isdigit() else employee_id}
             ]
         })
-
         employee_name = profile.get("employeeName") if profile else "Unknown"
 
-        start = shift.get("starttime")
-        end = shift.get("endtime")
-
-        if not start:
-            continue
-
-        # ✅ BILL FILTER BY DATE ONLY (NOT seconds)
-        day_start = start.replace(hour=0, minute=0, second=0)
-        day_end = start.replace(hour=23, minute=59, second=59)
-
+        # 🔥 GET BILLS STRICTLY BY SHIFT NUMBER
         bills = list(billing_collection.find({
             "billing_status": "paid",
-            "lastmodified_by": {"$in": [employee_id, int(employee_id) if employee_id.isdigit() else employee_id]},
-            "lastmodified_date": {"$gte": day_start, "$lte": day_end}
+            "shiftno": shift_no
         }))
 
         total_amount = 0
         cash_total = 0
-        digital_total = 0   # Card + UPI
-
+        digital_total = 0
         patient_details = []
 
         for bill in bills:
@@ -240,13 +267,13 @@ def get_shift_account_summary(request):
 
                 if method == "cash":
                     cash_total += amt
-                elif method in ["upi", "card"]:
-                    digital_total += amt
                 else:
-                    digital_total += amt  # treat other modes as digital
+                    digital_total += amt  # UPI, Card, Others
 
-                payment_modes.append({"method": method, "amount": amt})
-
+                payment_modes.append({
+                    "method": method,
+                    "amount": amt
+                })
 
             total_amount += bill_total
 
@@ -257,16 +284,17 @@ def get_shift_account_summary(request):
             patient_details.append({
                 "patientname": bill.get("patientname"),
                 "uhid": bill.get("uhid"),
+                "billnumber": bill.get("billnumber"),
                 "procedures": procedures,
                 "payments": payment_modes,
                 "total": bill_total
             })
 
         response_data.append({
-            "shiftno": shift.get("shiftno"),
+            "shiftno": shift_no,
             "employee_name": employee_name,
-            "starttime": start,
-            "endtime": end,
+            "starttime": shift.get("starttime"),
+            "endtime": shift.get("endtime"),
             "cash_total": cash_total,
             "digital_total": digital_total,
             "total_amount": total_amount,
@@ -274,8 +302,6 @@ def get_shift_account_summary(request):
         })
 
     return JsonResponse({"success": True, "data": response_data}, safe=False)
-
-
 
 @api_view(['GET'])
 @permission_classes([HasRolePermission])
@@ -556,3 +582,115 @@ def get_active_shift(request):
         "starttime": active_shift["starttime"],
         "created_by": active_shift.get("created_by")
     })
+
+
+
+
+# views.py
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.response import Response
+from pymongo import MongoClient
+from datetime import datetime, timedelta
+import os, json
+from collections import defaultdict
+
+
+
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.response import Response
+from pymongo import MongoClient
+import os, json
+from collections import defaultdict
+
+
+
+@api_view(["POST"])
+@permission_classes([HasRolePermission])
+def get_pharmacist_shiftreport(request):
+
+    employee_id = request.data.get("auth-user-id")
+    from_date = request.data.get("from_date")
+    to_date = request.data.get("to_date")
+
+    if not employee_id:
+        return Response({"error": "Employee authentication failed"}, status=401)
+
+    mongo_url = os.getenv("GLOBAL_DB_HOST")
+    client = MongoClient(mongo_url)
+
+    er_db = client["ER_Billing"]
+    shift_collection = er_db["er_shiftdetails"]
+    billing_collection = er_db["billing_erbilling"]
+
+    # 🛑 STEP 1: Get ONLY CLOSED SHIFTS of this pharmacist
+    shift_filter = {
+        "created_by": str(employee_id),
+        "is_active": False   # ✅ ONLY completed shifts
+    }
+
+    # Optional date filter (based on shift start date)
+    if from_date and to_date:
+        shift_filter["starttime"] = {
+            "$gte": datetime.strptime(from_date, "%Y-%m-%d"),
+            "$lte": datetime.strptime(to_date, "%Y-%m-%d") + timedelta(days=1)
+        }
+
+    shifts = list(shift_collection.find(shift_filter))
+
+    report = []
+
+    for shift in shifts:
+        shiftno = shift.get("shiftno")
+        starttime = shift.get("starttime")
+        endtime = shift.get("endtime")
+
+        # 🧾 STEP 2: Get PAID bills under this CLOSED shift
+        bills = billing_collection.find({
+            "shiftno": shiftno,
+            "pharmacist_id": str(employee_id),
+            "billing_status": "paid"
+        })
+
+        cash_total = 0
+        bank_total = 0  # Card + UPI only
+
+        for bill in bills:
+            payments = bill.get("payment_mode", [])
+
+            # Handle stringified JSON
+            if isinstance(payments, str):
+                try:
+                    payments = json.loads(payments)
+                except:
+                    payments = []
+
+            for pay in payments:
+                method = str(pay.get("method", "")).strip().lower()
+                amount = float(pay.get("amount", 0))
+
+                # 💵 CASH
+                if method == "cash":
+                    cash_total += amount
+
+                # 🏦 BANK = ONLY CARD + UPI
+                elif method in ["card", "upi"]:
+                    bank_total += amount
+
+                # Ignore other methods if any (insurance, credit, etc.)
+
+        grand_total = cash_total + bank_total
+
+        if grand_total > 0:
+            report.append({
+                "shiftno": shiftno,
+                "starttime": starttime,
+                "endtime": endtime,
+                "cash_total": round(cash_total, 2),
+                "bank_total": round(bank_total, 2),
+                "grand_total": round(grand_total, 2)
+            })
+
+    # Sort by shift start time
+    report.sort(key=lambda x: x["starttime"])
+
+    return Response(report)

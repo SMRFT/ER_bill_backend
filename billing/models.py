@@ -23,8 +23,10 @@ class ERBilling(models.Model):
 
     total = models.FloatField()
     net_amount = models.FloatField(max_length=10,blank=True, null=True)
+    shiftno = models.CharField(max_length=20, unique=True)  # 2526/000001
     created_by = models.CharField(max_length=100, blank=True, null=True)
     created_date = models.DateTimeField(auto_now_add=True)
+    pharmacist_id = models.CharField(max_length=20, null=True, blank=True)
     lastmodified_by = models.CharField(max_length=100, blank=True, null=True)
     lastmodified_date = models.DateTimeField(auto_now_add=True)
     billing_status = models.CharField(max_length=10,default="Billed")
