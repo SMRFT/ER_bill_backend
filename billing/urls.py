@@ -12,8 +12,7 @@ urlpatterns = [
     path("er_report/", views.er_report),
     path("get_next_bill_number/", views.get_next_bill_number),
     path("shiftdetails/", views.post_shiftdetails),
-     path("get_active_shift/", views.get_active_shift),
+    path("get_active_shift/", views.get_active_shift),
     path("get_pharmacist_shiftreport/", views.get_pharmacist_shiftreport),
-     
-
+    path("View_bills_report/", views.View_bills_report),
 ]

@@ -223,7 +223,7 @@ def get_shift_account_summary(request):
         date_filter = {"starttime": {"$gte": start_day, "$lte": end_day}}
 
     # Only CLOSED shifts
-    shifts = list(shift_collection.find({**date_filter, "is_active": False}).sort("starttime", -1))
+    shifts = list(shift_collection.find({**date_filter}).sort("starttime", -1))
 
     response_data = []
 
@@ -566,21 +566,39 @@ def post_shiftdetails(request):
 def get_active_shift(request):
     mongo_url = os.getenv("GLOBAL_DB_HOST")
     client = MongoClient(mongo_url)
-    db = client["ER_Billing"]
-    collection = db["er_shiftdetails"]
 
-    active_shift = collection.find_one({"is_active": True})
+    # ER Billing DB
+    er_db = client["ER_Billing"]
+    shift_collection = er_db["er_shiftdetails"]
+
+    # Global DB
+    global_db = client["Global"]
+    profile_collection = global_db["backend_diagnostics_profile"]
+
+    # Find active shift
+    active_shift = shift_collection.find_one({"is_active": True})
 
     if not active_shift:
         return Response({"is_active": False})
 
-    active_shift["_id"] = str(active_shift["_id"])
+    created_by = active_shift.get("created_by")
+    created_by_name = None
+
+    # Lookup employee name
+    if created_by:
+        profile = profile_collection.find_one(
+            {"employeeId": str(created_by)},
+            {"employeeName": 1}
+        )
+        if profile:
+            created_by_name = profile.get("employeeName")
 
     return Response({
         "is_active": True,
-        "shiftno": active_shift["shiftno"],
-        "starttime": active_shift["starttime"],
-        "created_by": active_shift.get("created_by")
+        "shiftno": active_shift.get("shiftno"),
+        "starttime": active_shift.get("starttime"),
+        "created_by": created_by,
+        "created_by_name": created_by_name
     })
 
 
@@ -596,24 +614,15 @@ from collections import defaultdict
 
 
 
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.response import Response
-from pymongo import MongoClient
-import os, json
-from collections import defaultdict
-
-
-
 @api_view(["POST"])
 @permission_classes([HasRolePermission])
 def get_pharmacist_shiftreport(request):
 
-    employee_id = request.data.get("auth-user-id")
     from_date = request.data.get("from_date")
     to_date = request.data.get("to_date")
 
-    if not employee_id:
-        return Response({"error": "Employee authentication failed"}, status=401)
+    if not from_date or not to_date:
+        return Response({"error": "From and To date required"}, status=400)
 
     mongo_url = os.getenv("GLOBAL_DB_HOST")
     client = MongoClient(mongo_url)
@@ -622,42 +631,40 @@ def get_pharmacist_shiftreport(request):
     shift_collection = er_db["er_shiftdetails"]
     billing_collection = er_db["billing_erbilling"]
 
-    # 🛑 STEP 1: Get ONLY CLOSED SHIFTS of this pharmacist
-    shift_filter = {
-        "created_by": str(employee_id),
-        "is_active": False   # ✅ ONLY completed shifts
-    }
+    global_db = client["Global"]
+    profile_collection = global_db["backend_diagnostics_profile"]
 
-    # Optional date filter (based on shift start date)
-    if from_date and to_date:
-        shift_filter["starttime"] = {
+    # ✅ CLOSED SHIFTS IN DATE RANGE
+    shift_filter = {
+        "starttime": {
             "$gte": datetime.strptime(from_date, "%Y-%m-%d"),
             "$lte": datetime.strptime(to_date, "%Y-%m-%d") + timedelta(days=1)
-        }
+        },
+        
+    }
 
     shifts = list(shift_collection.find(shift_filter))
-
     report = []
 
     for shift in shifts:
         shiftno = shift.get("shiftno")
-        starttime = shift.get("starttime")
-        endtime = shift.get("endtime")
 
-        # 🧾 STEP 2: Get PAID bills under this CLOSED shift
-        bills = billing_collection.find({
+        bills = list(billing_collection.find({
             "shiftno": shiftno,
-            "pharmacist_id": str(employee_id),
             "billing_status": "paid"
-        })
+        }))
 
         cash_total = 0
-        bank_total = 0  # Card + UPI only
+        card_total = 0
+        upi_total = 0
+        pharmacist_ids = set()
 
         for bill in bills:
-            payments = bill.get("payment_mode", [])
+            pharmacist_id = bill.get("pharmacist_id")
+            if pharmacist_id:
+                pharmacist_ids.add(pharmacist_id)
 
-            # Handle stringified JSON
+            payments = bill.get("payment_mode", [])
             if isinstance(payments, str):
                 try:
                     payments = json.loads(payments)
@@ -665,32 +672,137 @@ def get_pharmacist_shiftreport(request):
                     payments = []
 
             for pay in payments:
-                method = str(pay.get("method", "")).strip().lower()
+                method = str(pay.get("method", "")).lower()
                 amount = float(pay.get("amount", 0))
 
-                # 💵 CASH
                 if method == "cash":
                     cash_total += amount
+                elif method == "card":
+                    card_total += amount
+                elif method == "upi":
+                    upi_total += amount
 
-                # 🏦 BANK = ONLY CARD + UPI
-                elif method in ["card", "upi"]:
-                    bank_total += amount
-
-                # Ignore other methods if any (insurance, credit, etc.)
-
+        bank_total = card_total + upi_total
         grand_total = cash_total + bank_total
+
+        # ✅ MAP PHARMACIST ID → NAME
+        collected_by = "-"
+        if pharmacist_ids:
+            profile = profile_collection.find_one(
+                {"employeeId": list(pharmacist_ids)[0]},
+                {"employeeName": 1}
+            )
+            if profile:
+                collected_by = profile.get("employeeName", "-")
 
         if grand_total > 0:
             report.append({
                 "shiftno": shiftno,
-                "starttime": starttime,
-                "endtime": endtime,
+                "starttime": shift.get("starttime"),
+                "endtime": shift.get("endtime"),
                 "cash_total": round(cash_total, 2),
+                "card_total": round(card_total, 2),
+                "upi_total": round(upi_total, 2),
                 "bank_total": round(bank_total, 2),
-                "grand_total": round(grand_total, 2)
+                "grand_total": round(grand_total, 2),
+                "collected_by": collected_by
             })
 
-    # Sort by shift start time
     report.sort(key=lambda x: x["starttime"])
-
     return Response(report)
+
+
+
+
+
+
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.response import Response
+from rest_framework import status
+from pymongo import MongoClient
+from datetime import datetime, timedelta
+import os
+
+@api_view(["POST"])
+@permission_classes([HasRolePermission])
+def View_bills_report(request):
+    try:
+        mongo_url = os.getenv("GLOBAL_DB_HOST")
+        client = MongoClient(mongo_url)
+
+        er_db = client["ER_Billing"]
+        billing_collection = er_db["billing_erbilling"]
+
+        global_db = client["Global"]
+        profile_collection = global_db["backend_diagnostics_profile"]
+
+        from_date = request.data.get("from_date")
+        to_date = request.data.get("to_date")
+        search_by = request.data.get("search_by")
+        search_value = request.data.get("search_value")
+
+        if not from_date or not to_date:
+            return Response(
+                {"message": "from_date and to_date are required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        start = datetime.strptime(from_date, "%Y-%m-%d")
+        end = datetime.strptime(to_date, "%Y-%m-%d") + timedelta(days=1)
+
+        query = {
+            "date": {"$gte": start, "$lt": end}
+        }
+
+        # Dynamic filters
+        if search_by and search_value:
+            if search_by == "uhid":
+                query["uhid"] = search_value
+
+            elif search_by == "patientname":
+                query["patientname"] = {"$regex": search_value, "$options": "i"}
+
+            elif search_by == "status":
+                query["billing_status"] = search_value
+
+            elif search_by == "paymentmode":
+                query["payment_mode"] = {
+                    "$regex": search_value, "$options": "i"
+                }
+
+        bills = list(billing_collection.find(query))
+
+        if not bills:
+            return Response(
+                {"message": "No patient found"},
+                status=status.HTTP_200_OK
+            )
+
+        # Fetch employee map
+        employee_map = {
+            emp["employeeId"]: emp.get("employeeName", "")
+            for emp in profile_collection.find({}, {"employeeId": 1, "employeeName": 1})
+        }
+
+        response = []
+        for bill in bills:
+            response.append({
+                "bill_date": bill["date"].strftime("%Y-%m-%d"),
+                "bill_time": bill["date"].strftime("%H:%M:%S"),
+                "patientname": bill.get("patientname"),
+                "uhid": bill.get("uhid"),
+                "payment_mode": bill.get("payment_mode"),
+                "status": bill.get("billing_status"),
+                "billnumber": bill.get("billnumber"),
+                "total": bill.get("total"),
+                "shiftno": bill.get("shiftno"),
+                "billed_by": employee_map.get(bill.get("created_by"), "")
+            })
+
+        return Response(response, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        return Response(
+            {"error": str(e)},
+            status=status.HTTP_400_BAD_REQUEST
+        )
