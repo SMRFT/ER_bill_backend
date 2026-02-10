@@ -11,9 +11,10 @@ PAGE_MAPPING = {
     r'^/_b_a_c_k_e_n_d/ERBilling/update-status(?:/[^/]+)+/$': 'ER-P-ERUS', 
     r'^/_b_a_c_k_e_n_d/ERBilling/AccountSummary/?(\?.*)?$': 'ER-P-ERAS',
     r'^/_b_a_c_k_e_n_d/ERBilling/Pharmacy/?(\?.*)?$': 'ER-P-ERP',
-    '/_b_a_c_k_e_n_d/ERBilling/shiftdetails/': 'ER-P-ERSD',
+    '/_b_a_c_k_e_n_d/ERBilling/shiftdetails/': 'ER-P-ERGAS',
     '/_b_a_c_k_e_n_d/ERBilling/get_active_shift/': 'ER-P-ERGAS',
     '/_b_a_c_k_e_n_d/ERBilling/get_pharmacist_shiftreport/':'ER-P-ERGPR',
+    '/_b_a_c_k_e_n_d/ERBilling/View_bills_report/':'ER-P-ERVB',
  
  
 
@@ -26,9 +27,10 @@ PAGE_MAPPING = {
     '/AccountSummary/': 'ER-P-ERAS',
     '/printbill/': 'ER-P-ERPB',
     '/erreport/':'ER-P-ERREP',
-    'shiftdetails/':'ER-P-ERSD',
+    '/shiftdetails/':'ER-P-ERSD',
     'get_active_shift/': 'ER-P-ERGAS',
     'get_pharmacist_shiftreport/':'ER-P-ERGPR',
+    'View_bills_report/':'ER-P-ERVB'
     
 }
 
