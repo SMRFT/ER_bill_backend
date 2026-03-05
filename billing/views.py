@@ -331,37 +331,52 @@ def printbill(request):
 
 
 
-
 @api_view(['GET'])
 @permission_classes([HasRolePermission])
 def get_next_bill_number(request):
-    current_year = datetime.now().year % 100
-    next_year = (datetime.now().year + 1) % 100
-    prefix = f"{current_year:02d}{next_year:02d}"
+    try:
+        today = datetime.now()
 
-    # Get latest bill with prefix → order by number
-    latest_bill = (
-        ERBilling.objects.filter(billnumber__startswith=prefix)
-        .order_by("-billnumber")
-        .first()
-    )
+        # Determine financial year (April → March)
+        if today.month >= 4:
+            start_year = today.year % 100
+            end_year = (today.year + 1) % 100
+        else:
+            start_year = (today.year - 1) % 100
+            end_year = today.year % 100
 
-    if latest_bill:
-        try:
-            last_num = int(latest_bill.billnumber.split("/")[-1])
-        except:
-            last_num = 0
-    else:
-        last_num = 0
+        prefix = f"{start_year:02d}{end_year:02d}"
 
-    next_number = last_num + 1
-    next_bill = f"{prefix}/{next_number:02d}"
+        # Get all bills for this financial year
+        bills = ERBilling.objects.filter(
+            billnumber__startswith=prefix
+        ).values_list("billnumber", flat=True)
 
-    return Response({"billNumber": next_bill})
+        max_number = 0
 
+        for bill in bills:
+            try:
+                num = int(bill.split("/")[-1])
+                if num > max_number:
+                    max_number = num
+            except:
+                continue
 
+        next_number = max_number + 1
 
+        # 6 digit running number (supports 999999 bills per year)
+        next_bill = f"{prefix}/{next_number:06d}"
 
+        return Response(
+            {"billNumber": next_bill},
+            status=status.HTTP_200_OK
+        )
+
+    except Exception as e:
+        return Response(
+            {"success": False, "error": str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
