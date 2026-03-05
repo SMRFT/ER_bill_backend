@@ -334,49 +334,39 @@ def printbill(request):
 @api_view(['GET'])
 @permission_classes([HasRolePermission])
 def get_next_bill_number(request):
-    try:
-        today = datetime.now()
 
-        # Determine financial year (April → March)
-        if today.month >= 4:
-            start_year = today.year % 100
-            end_year = (today.year + 1) % 100
-        else:
-            start_year = (today.year - 1) % 100
-            end_year = today.year % 100
+    today = datetime.now()
 
-        prefix = f"{start_year:02d}{end_year:02d}"
+    # Financial year (Apr–Mar)
+    if today.month >= 4:
+        start_year = today.year % 100
+        end_year = (today.year + 1) % 100
+    else:
+        start_year = (today.year - 1) % 100
+        end_year = today.year % 100
 
-        # Get all bills for this financial year
-        bills = ERBilling.objects.filter(
-            billnumber__startswith=prefix
-        ).values_list("billnumber", flat=True)
+    prefix = f"{start_year:02d}{end_year:02d}"
 
-        max_number = 0
+    bills = ERBilling.objects.filter(
+        billnumber__startswith=prefix
+    ).values_list("billnumber", flat=True)
 
-        for bill in bills:
-            try:
-                num = int(bill.split("/")[-1])
-                if num > max_number:
-                    max_number = num
-            except:
-                continue
+    max_number = 0
 
-        next_number = max_number + 1
+    for bill in bills:
+        try:
+            number = int(bill.split("/")[-1])
+            if number > max_number:
+                max_number = number
+        except:
+            pass
 
-        # 6 digit running number (supports 999999 bills per year)
-        next_bill = f"{prefix}/{next_number:06d}"
+    next_number = max_number + 1
 
-        return Response(
-            {"billNumber": next_bill},
-            status=status.HTTP_200_OK
-        )
+    next_bill = f"{prefix}/{next_number}"
 
-    except Exception as e:
-        return Response(
-            {"success": False, "error": str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
+    return Response({"billNumber": next_bill})
+    
 
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
