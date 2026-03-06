@@ -59,7 +59,6 @@ def er_billing(request):
 
 
 
-
 @api_view(['GET'])
 @permission_classes([HasRolePermission])
 def get_doctor_list(request):
@@ -197,15 +196,18 @@ import json
 from pymongo import MongoClient
 from django.http import JsonResponse
 from rest_framework.decorators import api_view, permission_classes
+import pytz
 
 
 
 @api_view(["GET"])
 @permission_classes([HasRolePermission])
 def get_shift_account_summary(request):
+
     mongo_url = os.getenv("GLOBAL_DB_HOST")
     client = MongoClient(mongo_url)
 
+    # Databases
     er_db = client["ER_Billing"]
     shift_collection = er_db["er_shiftdetails"]
     billing_collection = er_db["billing_erbilling"]
@@ -217,30 +219,49 @@ def get_shift_account_summary(request):
     to_date = request.GET.get("to")
 
     date_filter = {}
-    if from_date and to_date:
-        start_day = datetime.strptime(from_date, "%Y-%m-%d")
-        end_day = datetime.strptime(to_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
-        date_filter = {"starttime": {"$gte": start_day, "$lte": end_day}}
 
-    # Only CLOSED shifts
-    shifts = list(shift_collection.find({**date_filter}).sort("starttime", -1))
+    if from_date and to_date:
+        ist = pytz.timezone("Asia/Kolkata")
+
+        # Convert IST date → UTC for Mongo filtering
+        start_day_ist = ist.localize(datetime.strptime(from_date, "%Y-%m-%d"))
+        end_day_ist = ist.localize(
+            datetime.strptime(to_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+        )
+
+        start_day_utc = start_day_ist.astimezone(pytz.utc)
+        end_day_utc = end_day_ist.astimezone(pytz.utc)
+
+        date_filter = {
+            "starttime": {
+                "$gte": start_day_utc,
+                "$lte": end_day_utc
+            }
+        }
+
+    # Get shifts
+    shifts = list(
+        shift_collection.find(date_filter).sort("starttime", -1)
+    )
 
     response_data = []
 
     for shift in shifts:
+
         shift_no = shift.get("shiftno")
         employee_id = str(shift.get("created_by"))
 
-        # Employee Name Lookup
+        # Employee lookup
         profile = profile_collection.find_one({
             "$or": [
                 {"employeeId": employee_id},
                 {"employeeId": int(employee_id) if employee_id.isdigit() else employee_id}
             ]
         })
+
         employee_name = profile.get("employeeName") if profile else "Unknown"
 
-        # 🔥 GET BILLS STRICTLY BY SHIFT NUMBER
+        # Bills strictly by shift number
         bills = list(billing_collection.find({
             "billing_status": "paid",
             "shiftno": shift_no
@@ -252,14 +273,23 @@ def get_shift_account_summary(request):
         patient_details = []
 
         for bill in bills:
+
             bill_total = 0
             payment_modes = []
 
             modes = bill.get("payment_mode", [])
+
             if isinstance(modes, str):
-                modes = json.loads(modes)
+                try:
+                    modes = json.loads(modes)
+                except:
+                    modes = []
+
+            if modes is None:
+                modes = []
 
             for m in modes:
+
                 amt = float(m.get("amount", 0))
                 method = m.get("method", "").lower()
 
@@ -268,7 +298,7 @@ def get_shift_account_summary(request):
                 if method == "cash":
                     cash_total += amt
                 else:
-                    digital_total += amt  # UPI, Card, Others
+                    digital_total += amt
 
                 payment_modes.append({
                     "method": method,
@@ -278,8 +308,12 @@ def get_shift_account_summary(request):
             total_amount += bill_total
 
             procedures = bill.get("procedures", [])
+
             if isinstance(procedures, str):
-                procedures = json.loads(procedures)
+                try:
+                    procedures = json.loads(procedures)
+                except:
+                    procedures = []
 
             patient_details.append({
                 "patientname": bill.get("patientname"),
@@ -301,7 +335,10 @@ def get_shift_account_summary(request):
             "patients": patient_details
         })
 
-    return JsonResponse({"success": True, "data": response_data}, safe=False)
+    return JsonResponse({
+        "success": True,
+        "data": response_data
+    }, safe=False)
 
 @api_view(['GET'])
 @permission_classes([HasRolePermission])
