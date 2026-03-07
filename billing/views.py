@@ -218,11 +218,10 @@ def get_shift_account_summary(request):
     from_date = request.GET.get("from")
     to_date = request.GET.get("to")
 
+    ist = pytz.timezone("Asia/Kolkata")
     date_filter = {}
 
     if from_date and to_date:
-        ist = pytz.timezone("Asia/Kolkata")
-
         # Convert IST date → UTC for Mongo filtering
         start_day_ist = ist.localize(datetime.strptime(from_date, "%Y-%m-%d"))
         end_day_ist = ist.localize(
@@ -324,11 +323,24 @@ def get_shift_account_summary(request):
                 "total": bill_total
             })
 
+        start_time = shift.get("starttime")
+        end_time = shift.get("endtime")
+
+        if start_time and start_time.tzinfo is None:
+            start_time = pytz.utc.localize(start_time).astimezone(ist)
+        elif start_time:
+            start_time = start_time.astimezone(ist)
+
+        if end_time and end_time.tzinfo is None:
+            end_time = pytz.utc.localize(end_time).astimezone(ist)
+        elif end_time:
+            end_time = end_time.astimezone(ist)
+
         response_data.append({
             "shiftno": shift_no,
             "employee_name": employee_name,
-            "starttime": shift.get("starttime"),
-            "endtime": shift.get("endtime"),
+            "starttime": start_time,
+            "endtime": end_time,
             "cash_total": cash_total,
             "digital_total": digital_total,
             "total_amount": total_amount,
@@ -590,10 +602,11 @@ def post_shiftdetails(request):
 
         collection.update_one(
             {"_id": active_shift["_id"]},
-            {"$set": {"endtime": end_time, "is_active": False}}
+            {"$set": {"endtime": end_time, "closing_status": "Manually Closed", "is_active": False}}
         )
 
         active_shift["endtime"] = end_time
+        active_shift["closing_status"] = "Manually Closed"
         active_shift["is_active"] = False
         active_shift["_id"] = str(active_shift["_id"])
 
