@@ -15,6 +15,6 @@ echo "Starting Django Server on port 2111..."
 nohup bash -c 'export SECURITY_DISABLED=false && python3 manage.py runserver 0.0.0.0:2111 --settings=ER_bill_backend.settings-prod' &
 
 echo "Starting Automation Worker..."
-python3 manage.py automate_results
+nohup python3 manage.py automate_results > worker.log 2>&1 &
 
 echo "Services started with nohup. Logs: server.log, worker.log"
