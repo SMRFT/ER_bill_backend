@@ -15,4 +15,9 @@ urlpatterns = [
     path("get_active_shift/", views.get_active_shift),
     path("get_pharmacist_shiftreport/", views.get_pharmacist_shiftreport),
     path("View_bills_report/", views.View_bills_report),
+    path("View_bills_discount_report/", views.View_bills_discount_report),
+
+    path("get_billing_for_discount/", views.get_billing_for_discount),
+    path("update_billing_discount/", views.update_billing_discount),
+    path("soft_delete_billing/", views.soft_delete_billing),
 ]
