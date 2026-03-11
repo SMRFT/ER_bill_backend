@@ -30,6 +30,9 @@ class ERBilling(models.Model):
     lastmodified_by = models.CharField(max_length=100, blank=True, null=True)
     lastmodified_date = models.DateTimeField(auto_now_add=True)
     billing_status = models.CharField(max_length=10,default="Billed")
+
+    is_active = models.BooleanField(default=True)
+
     def __str__(self):
         return f"{self.patientname} - {self.billnumber}"
 

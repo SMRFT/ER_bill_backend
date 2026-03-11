@@ -15,9 +15,10 @@ PAGE_MAPPING = {
     '/_b_a_c_k_e_n_d/ERBilling/get_active_shift/': 'ER-P-ERGAS',
     '/_b_a_c_k_e_n_d/ERBilling/get_pharmacist_shiftreport/':'ER-P-ERGPR',
     '/_b_a_c_k_e_n_d/ERBilling/View_bills_report/':'ER-P-ERVB',
- 
- 
-
+    r'^/_b_a_c_k_e_n_d/ERBilling/get_billing_for_discount/?(\?.*)?$':'ER-API-ERUB',
+    '/_b_a_c_k_e_n_d/ERBilling/update_billing_discount/':'ER-API-ERUB',
+    '/_b_a_c_k_e_n_d/ERBilling/View_bills_discount_report/':'ER-API-ERUB',
+    '/_b_a_c_k_e_n_d/ERBilling/soft_delete_billing/':'ER-API-ERUB',
 
     '/erbilling/': 'ER-P-ERB',
     '/doctorlist/': 'ER-P-ERDL',
@@ -30,11 +31,11 @@ PAGE_MAPPING = {
     '/shiftdetails/':'ER-P-ERSD',
     'get_active_shift/': 'ER-P-ERGAS',
     'get_pharmacist_shiftreport/':'ER-P-ERGPR',
-    'View_bills_report/':'ER-P-ERVB'
+    'View_bills_report/':'ER-P-ERVB',
+    'get_billing_for_discount/':'ER-P-ERB',
+    'update_billing_discount/':'ER-P-ERB',
     
 }
-
-
 
 PAGE_ACTION_MAPPING = {
     'xxx': {

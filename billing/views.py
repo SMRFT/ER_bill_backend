@@ -20,8 +20,9 @@ def er_billing(request):
     employee_id = data.get("auth-user-id")
 
     # Auto generate billnumber here
-    current_year = datetime.now().year % 100
-    next_year = (datetime.now().year + 1) % 100
+    now = timezone.now()
+    current_year = now.year % 100
+    next_year = (now.year + 1) % 100
     prefix = f"{current_year:02d}{next_year:02d}"
 
     latest = (
@@ -46,7 +47,7 @@ def er_billing(request):
         serializer.save(
             billnumber=new_billnumber,
             created_by=employee_id,
-            created_date=datetime.now()
+            created_date=timezone.now()
         )
 
         return Response({
@@ -92,23 +93,39 @@ from .serializers import ERBillingSerializer
 @api_view(['GET'])
 @permission_classes([HasRolePermission])
 def get_er_billing(request):
-    # Read from query params, not body
-    date_str = request.GET.get("date")  # <-- Changed from JSONParser
-    
+    date_str = request.GET.get("date")
+    mongo_url = os.getenv("GLOBAL_DB_HOST")
+    client = MongoClient(mongo_url)
+    er_db = client["ER_Billing"]
+    billing_collection = er_db["billing_erbilling"]
+
+    # Localize today's date to IST if not provided
     if not date_str:
-        date_str = datetime.utcnow().strftime("%Y-%m-%d")
+        date_str = timezone.now().astimezone(pytz.timezone("Asia/Kolkata")).strftime("%Y-%m-%d")
     
     selected_date = datetime.strptime(date_str, "%Y-%m-%d").date()
     
-    # Fetch ALL and filter in Python (MongoDB-safe)
-    all_bills = ERBilling.objects.all().order_by("-date")
+    # Query all active bills
+    query = {"is_active": {"$ne": False}}
+    all_active_bills = list(billing_collection.find(query).sort("date", -1))
     
     filtered = []
-    for bill in all_bills:
-        bill_date = bill.date.date()  # convert Mongo datetime → date only
-        if bill_date == selected_date:
+    for bill in all_active_bills:
+        dt = bill["date"]
+        if timezone.is_naive(dt):
+            dt = timezone.make_aware(dt, timezone.utc)
+        
+        # Localize to IST before comparing date
+        ist = pytz.timezone("Asia/Kolkata")
+        local_dt = dt.astimezone(ist)
+        if local_dt.date() == selected_date:
+            # Map MongoDB format back to what the serializer expects if needed
+            # or just use the raw data if it matches the frontend's needs.
+            # Since we used the serializer before, let's ensure compatibility.
+            bill["id"] = str(bill["_id"])
             filtered.append(bill)
     
+    # We can use the serializer on the filtered list of dicts
     serializer = ERBillingSerializer(filtered, many=True)
     return JsonResponse(serializer.data, safe=False)
 
@@ -166,7 +183,7 @@ def update_billing_status(request, billnumber):
     bill.payment_mode = payment_mode
     bill.billing_status = billing_status
     bill.lastmodified_by = employee_id
-    bill.lastmodified_date = datetime.now()
+    bill.lastmodified_date = timezone.now()
 
     # ==========================================================
     # ✅ WHEN STATUS CHANGES FROM BILLED → PAID
@@ -218,23 +235,19 @@ def get_shift_account_summary(request):
     from_date = request.GET.get("from")
     to_date = request.GET.get("to")
 
-    ist = pytz.timezone("Asia/Kolkata")
     date_filter = {}
 
     if from_date and to_date:
-        # Convert IST date → UTC for Mongo filtering
-        start_day_ist = ist.localize(datetime.strptime(from_date, "%Y-%m-%d"))
-        end_day_ist = ist.localize(
+        # Since TIME_ZONE = 'Asia/Kolkata', timezone.make_aware uses IST
+        start_day = timezone.make_aware(datetime.strptime(from_date, "%Y-%m-%d"))
+        end_day = timezone.make_aware(
             datetime.strptime(to_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
         )
 
-        start_day_utc = start_day_ist.astimezone(pytz.utc)
-        end_day_utc = end_day_ist.astimezone(pytz.utc)
-
         date_filter = {
             "starttime": {
-                "$gte": start_day_utc,
-                "$lte": end_day_utc
+                "$gte": start_day,
+                "$lte": end_day
             }
         }
 
@@ -263,7 +276,8 @@ def get_shift_account_summary(request):
         # Bills strictly by shift number
         bills = list(billing_collection.find({
             "billing_status": "paid",
-            "shiftno": shift_no
+            "shiftno": shift_no,
+            "is_active": {"$ne": False}
         }))
 
         total_amount = 0
@@ -326,15 +340,15 @@ def get_shift_account_summary(request):
         start_time = shift.get("starttime")
         end_time = shift.get("endtime")
 
-        if start_time and start_time.tzinfo is None:
-            start_time = pytz.utc.localize(start_time).astimezone(ist)
-        elif start_time:
-            start_time = start_time.astimezone(ist)
+        if start_time and timezone.is_naive(start_time):
+            start_time = timezone.make_aware(start_time)
+        if start_time:
+            start_time = timezone.localtime(start_time)
 
-        if end_time and end_time.tzinfo is None:
-            end_time = pytz.utc.localize(end_time).astimezone(ist)
-        elif end_time:
-            end_time = end_time.astimezone(ist)
+        if end_time and timezone.is_naive(end_time):
+            end_time = timezone.make_aware(end_time)
+        if end_time:
+            end_time = timezone.localtime(end_time)
 
         response_data.append({
             "shiftno": shift_no,
@@ -360,13 +374,13 @@ def printbill(request):
     # Use passed date OR today's date
     if date_param:
         try:
-            selected = datetime.strptime(date_param, "%Y-%m-%d")
+            selected = timezone.make_aware(datetime.strptime(date_param, "%Y-%m-%d"))
         except ValueError:
             return Response({"error": "Invalid date"}, status=400)
     else:
         selected = timezone.now()
 
-    start = datetime(selected.year, selected.month, selected.day)
+    start = timezone.make_aware(datetime(selected.year, selected.month, selected.day))
     end = start + timedelta(days=1)
 
     # ❌ Removed billing_status="Billed"
@@ -384,7 +398,7 @@ def printbill(request):
 @permission_classes([HasRolePermission])
 def get_next_bill_number(request):
 
-    today = datetime.now()
+    today = timezone.now()
 
     # Financial year (Apr–Mar)
     if today.month >= 4:
@@ -439,22 +453,36 @@ def er_report(request):
             }, status=400)
 
         # ✅ Payload format: YYYY-MM-DD
-        start_date = datetime.strptime(from_date, "%Y-%m-%d")
-        end_date = datetime.strptime(to_date, "%Y-%m-%d")
+        start_date = timezone.make_aware(datetime.strptime(from_date, "%Y-%m-%d"))
+        end_date = timezone.make_aware(datetime.strptime(to_date, "%Y-%m-%d"))
         end_date = end_date.replace(hour=23, minute=59, second=59)
 
-        queryset = ERBilling.objects.filter(
-            date__range=(start_date, end_date)
-        ).order_by("-date")
+        mongo_url = os.getenv("GLOBAL_DB_HOST")
+        client = MongoClient(mongo_url)
+        er_db = client["ER_Billing"]
+        billing_collection = er_db["billing_erbilling"]
 
-        serializer = ERBillingSerializer(queryset, many=True)
+        query = {
+            "date": {"$gte": start_date, "$lte": end_date},
+            "is_active": {"$ne": False}
+        }
+
+        bills = list(billing_collection.find(query).sort("date", -1))
 
         male = 0
         female = 0
         patients = []
 
-        for item in serializer.data:
-            gender = (item.get("gender") or "").lower()
+        for bill in bills:
+            dt = bill["date"]
+            if timezone.is_naive(dt):
+                dt = timezone.make_aware(dt, timezone.utc)
+            
+            # Use explicit IST conversion
+            ist = pytz.timezone("Asia/Kolkata")
+            local_dt = dt.astimezone(ist)
+            
+            gender = (bill.get("gender") or "").lower()
 
             if gender == "male":
                 male += 1
@@ -462,14 +490,16 @@ def er_report(request):
                 female += 1
 
             patients.append({
-                "date": datetime.fromisoformat(item["date"]).strftime("%d-%m-%Y"),
-                "billnumber": item["billnumber"],
-                "uhid": item["uhid"],
-                "patientname": item["patientname"],
-                "gender": item["gender"],
-                "doctorname": item["doctorname"],
-                "total": item["total"],
-                "net_amount": item["net_amount"],
+                "date": local_dt.strftime("%d-%m-%Y"),
+                "time": local_dt.strftime("%H:%M:%S"),
+                "billnumber": bill["billnumber"],
+                "uhid": bill["uhid"],
+                "patientname": bill["patientname"],
+                "gender": bill.get("gender"),
+                "doctorname": bill.get("doctorname"),
+                "total": bill["total"],
+                "net_amount": bill.get("net_amount", bill["total"]),
+                "is_active": bill.get("is_active", True),
             })
 
         return Response({
@@ -477,7 +507,7 @@ def er_report(request):
             "summary": {
                 "male": male,
                 "female": female,
-                "total": queryset.count()
+                "total": len(patients)
             },
             "patients": patients
         })
@@ -497,7 +527,7 @@ import os
 import re
 
 def generate_shift_number():
-    now = datetime.now()
+    now = timezone.now()
 
     # 🔹 Financial year logic (Apr–Mar)
     if now.month >= 4:
@@ -566,11 +596,11 @@ def post_shiftdetails(request):
 
             shift_data = {
                 "shiftno": shift_number,
-                "starttime": datetime.utcnow(),
+                "starttime": timezone.now(),
                 "endtime": None,
                 "is_active": True,
                 "created_by": employee_id,
-                "created_date": datetime.utcnow()
+                "created_date": timezone.now()
             }
 
             result = collection.insert_one(shift_data)
@@ -598,7 +628,7 @@ def post_shiftdetails(request):
                 "error": "You cannot end another employee's shift"
             }, status=403)
 
-        end_time = datetime.utcnow()
+        end_time = timezone.now()
 
         collection.update_one(
             {"_id": active_shift["_id"]},
@@ -648,10 +678,17 @@ def get_active_shift(request):
         if profile:
             created_by_name = profile.get("employeeName")
 
+    start_time = active_shift.get("starttime")
+    if start_time and timezone.is_naive(start_time):
+        start_time = timezone.make_aware(start_time, timezone.utc)
+    
+    if start_time:
+        start_time = timezone.localtime(start_time)
+
     return Response({
         "is_active": True,
         "shiftno": active_shift.get("shiftno"),
-        "starttime": active_shift.get("starttime"),
+        "starttime": start_time,
         "created_by": created_by,
         "created_by_name": created_by_name
     })
@@ -706,7 +743,8 @@ def get_pharmacist_shiftreport(request):
 
         bills = list(billing_collection.find({
             "shiftno": shiftno,
-            "billing_status": "paid"
+            "billing_status": "paid",
+            "is_active": {"$ne": False}
         }))
 
         cash_total = 0
@@ -725,6 +763,9 @@ def get_pharmacist_shiftreport(request):
                     payments = json.loads(payments)
                 except:
                     payments = []
+            
+            if payments is None:
+                payments = []
 
             for pay in payments:
                 method = str(pay.get("method", "")).lower()
@@ -802,11 +843,12 @@ def View_bills_report(request):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        start = datetime.strptime(from_date, "%Y-%m-%d")
-        end = datetime.strptime(to_date, "%Y-%m-%d") + timedelta(days=1)
+        start = timezone.make_aware(datetime.strptime(from_date, "%Y-%m-%d"))
+        end = timezone.make_aware(datetime.strptime(to_date, "%Y-%m-%d") + timedelta(days=1))
 
         query = {
-            "date": {"$gte": start, "$lt": end}
+            "date": {"$gte": start, "$lt": end},
+            "is_active": {"$ne": False}
         }
 
         # Dynamic filters
@@ -841,15 +883,24 @@ def View_bills_report(request):
 
         response = []
         for bill in bills:
+            bill_date = bill["date"]
+            if timezone.is_naive(bill_date):
+                bill_date = timezone.make_aware(bill_date, timezone.utc)
+            
+            # Use explicit IST conversion
+            ist = pytz.timezone("Asia/Kolkata")
+            bill_date = bill_date.astimezone(ist)
+                
             response.append({
-                "bill_date": bill["date"].strftime("%Y-%m-%d"),
-                "bill_time": bill["date"].strftime("%H:%M:%S"),
+                "bill_date": bill_date.strftime("%Y-%m-%d"),
+                "bill_time": bill_date.strftime("%H:%M:%S"),
                 "patientname": bill.get("patientname"),
                 "uhid": bill.get("uhid"),
                 "payment_mode": bill.get("payment_mode"),
                 "status": bill.get("billing_status"),
                 "billnumber": bill.get("billnumber"),
                 "total": bill.get("total"),
+                "net_amount": bill.get("net_amount", bill.get("total")),
                 "shiftno": bill.get("shiftno"),
                 "billed_by": employee_map.get(bill.get("created_by"), "")
             })
@@ -861,3 +912,153 @@ def View_bills_report(request):
             {"error": str(e)},
             status=status.HTTP_400_BAD_REQUEST
         )
+
+@api_view(["POST"])
+@permission_classes([HasRolePermission])
+def View_bills_discount_report(request):
+    try:
+        mongo_url = os.getenv("GLOBAL_DB_HOST")
+        client = MongoClient(mongo_url)
+
+        er_db = client["ER_Billing"]
+        billing_collection = er_db["billing_erbilling"]
+
+        global_db = client["Global"]
+        profile_collection = global_db["backend_diagnostics_profile"]
+
+        from_date = request.data.get("from_date")
+        to_date = request.data.get("to_date")
+        search_by = request.data.get("search_by")
+        search_value = request.data.get("search_value")
+
+        if not from_date or not to_date:
+            return Response(
+                {"message": "from_date and to_date are required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        start = timezone.make_aware(datetime.strptime(from_date, "%Y-%m-%d"))
+        end = timezone.make_aware(datetime.strptime(to_date, "%Y-%m-%d") + timedelta(days=1))
+
+        query = {
+            "date": {"$gte": start, "$lt": end},
+            "billing_status": "Billed",
+            "is_active": {"$ne": False}
+        }
+
+        # Dynamic filters
+        if search_by and search_value:
+            if search_by == "uhid":
+                query["uhid"] = search_value
+
+            elif search_by == "patientname":
+                query["patientname"] = {"$regex": search_value, "$options": "i"}
+
+            elif search_by == "status":
+                query["billing_status"] = search_value
+
+            elif search_by == "paymentmode":
+                query["payment_mode"] = {
+                    "$regex": search_value, "$options": "i"
+                }
+
+        bills = list(billing_collection.find(query))
+
+        if not bills:
+            return Response(
+                {"message": "No patient found"},
+                status=status.HTTP_200_OK
+            )
+
+        # Fetch employee map
+        employee_map = {
+            emp["employeeId"]: emp.get("employeeName", "")
+            for emp in profile_collection.find({}, {"employeeId": 1, "employeeName": 1})
+        }
+
+        response = []
+        for bill in bills:
+            bill_date = bill["date"]
+            if timezone.is_naive(bill_date):
+                bill_date = timezone.make_aware(bill_date, timezone.utc)
+            
+            # Use explicit IST conversion
+            ist = pytz.timezone("Asia/Kolkata")
+            bill_date = bill_date.astimezone(ist)
+                
+            response.append({
+                "bill_date": bill_date.strftime("%Y-%m-%d"),
+                "bill_time": bill_date.strftime("%H:%M:%S"),
+                "patientname": bill.get("patientname"),
+                "uhid": bill.get("uhid"),
+                "payment_mode": bill.get("payment_mode"),
+                "status": bill.get("billing_status"),
+                "billnumber": bill.get("billnumber"),
+                "total": bill.get("total"),
+                "net_amount": bill.get("net_amount", bill.get("total")),
+                "shiftno": bill.get("shiftno"),
+                "billed_by": employee_map.get(bill.get("created_by"), "")
+            })
+
+        return Response(response, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        return Response(
+            {"error": str(e)},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+@api_view(["GET"])
+@permission_classes([HasRolePermission])
+def get_billing_for_discount(request):
+    billnumber = request.GET.get("billnumber")
+    if not billnumber:
+        return Response({"error": "billnumber is required"}, status=400)
+    
+    bill = get_object_or_404(ERBilling, billnumber=billnumber)
+    serializer = ERBillingSerializer(bill)
+    return Response(serializer.data)
+
+@api_view(["POST"])
+@permission_classes([HasRolePermission])
+def update_billing_discount(request):
+    billnumber = request.data.get("billnumber")
+    if not billnumber:
+        return Response({"error": "billnumber is required"}, status=400)
+
+    bill = get_object_or_404(ERBilling, billnumber=billnumber)
+    
+    # Update discount details
+    bill.discount_type = request.data.get("discount_type", bill.discount_type)
+    bill.discount_value = float(request.data.get("discount_value", bill.discount_value))
+    bill.discount_amount = float(request.data.get("discount_amount", bill.discount_amount))
+    bill.net_amount = float(request.data.get("net_amount", bill.net_amount))
+    
+    bill.lastmodified_by = request.data.get("auth-user-id")
+    bill.lastmodified_date = timezone.now()
+    
+    bill.save()
+    
+    return Response({
+        "success": True,
+        "message": "Discount updated successfully",
+        "data": ERBillingSerializer(bill).data
+    })
+
+@api_view(["POST"])
+@permission_classes([HasRolePermission])
+def soft_delete_billing(request):
+    billnumber = request.data.get("billnumber")
+    if not billnumber:
+        return Response({"error": "billnumber is required"}, status=400)
+    
+    try:
+        bill = ERBilling.objects.get(billnumber=billnumber)
+        bill.is_active = False
+        bill.save()
+        return Response({"success": True, "message": "Bill deleted successfully"})
+    except ERBilling.DoesNotExist:
+        return Response({"error": "Bill not found"}, status=404)
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
