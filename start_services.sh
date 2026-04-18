@@ -12,7 +12,7 @@ trap cleanup SIGINT SIGTERM
 
 echo "Starting Django Server on port 2111..."
 # Using nohup to keep it running in the background
-nohup python3 manage.py runserver 0.0.0.0:2111 > server.log 2>&1 &
+nohup bash -c 'export SECURITY_DISABLED=false && python3 manage.py runserver 0.0.0.0:2111 --settings=ER_bill_backend.settings-prod' &
 
 echo "Starting Automation Worker..."
 nohup python3 manage.py automate_results > worker.log 2>&1 &
