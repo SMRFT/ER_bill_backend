@@ -369,6 +369,7 @@ def get_shift_account_summary(request):
 @api_view(['GET'])
 @permission_classes([HasRolePermission])
 def printbill(request):
+    # print("DEBUG: printbill view called with date:", request.GET.get("date"))
     date_param = request.GET.get("date")
 
     # Use passed date OR today's date
@@ -383,14 +384,53 @@ def printbill(request):
     start = timezone.make_aware(datetime(selected.year, selected.month, selected.day))
     end = start + timedelta(days=1)
 
-    # ❌ Removed billing_status="Billed"
-    bills = ERBilling.objects.filter(
-        date__gte=start,
-        date__lt=end
-    ).order_by("date")
+    # Using MongoClient directly to avoid Djongo's SQL translation errors
+    mongo_url = os.getenv("GLOBAL_DB_HOST")
+    client = MongoClient(mongo_url)
+    db = client["ER_Billing"]
+    collection = db["billing_erbilling"]
 
-    serializer = ERBillingSerializer(bills, many=True)
-    return Response(serializer.data)
+    query = {
+        "date": {
+            "$gte": start,
+            "$lt": end
+        },
+        "is_active": {"$ne": False}
+    }
+
+    # Fetch and sort by date
+    cursor = collection.find(query).sort("date", 1)
+    
+    response_data = []
+    for doc in cursor:
+        response_data.append({
+            "id": str(doc["_id"]),
+            "uhid": doc.get("uhid"),
+            "patientname": doc.get("patientname"),
+            "age": doc.get("age"),
+            "gender": doc.get("gender"),
+            "phonenumber": doc.get("phonenumber"),
+            "billnumber": doc.get("billnumber"),
+            "doctorname": doc.get("doctorname"),
+            "date": doc.get("date"),
+            "payment_mode": doc.get("payment_mode"),
+            "procedures": doc.get("procedures"),
+            "discount_type": doc.get("discount_type"),
+            "discount_value": doc.get("discount_value"),
+            "discount_amount": doc.get("discount_amount"),
+            "total": doc.get("total"),
+            "net_amount": doc.get("net_amount"),
+            "shiftno": doc.get("shiftno"),
+            "created_by": doc.get("created_by"),
+            "created_date": doc.get("created_date"),
+            "pharmacist_id": doc.get("pharmacist_id"),
+            "lastmodified_by": doc.get("lastmodified_by"),
+            "lastmodified_date": doc.get("lastmodified_date"),
+            "billing_status": doc.get("billing_status"),
+            "is_active": doc.get("is_active")
+        })
+
+    return Response(response_data)
 
 
 
