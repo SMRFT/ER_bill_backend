@@ -39,7 +39,7 @@ def er_billing(request):
     else:
         last_num = 0
 
-    new_billnumber = f"{prefix}/{last_num + 1:02d}"
+    new_billnumber = f"{prefix}/{last_num + 1:06d}"
 
     serializer = ERBillingSerializer(data=data)
 
