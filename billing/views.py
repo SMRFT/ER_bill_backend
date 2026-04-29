@@ -466,7 +466,7 @@ def get_next_bill_number(request):
 
     next_number = max_number + 1
 
-    next_bill = f"{prefix}/{next_number}"
+    next_bill = f"{prefix}/{next_number:06d}"
 
     return Response({"billNumber": next_bill})
     
