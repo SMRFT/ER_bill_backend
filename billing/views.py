@@ -19,33 +19,27 @@ def er_billing(request):
     data = request.data
     employee_id = data.get("auth-user-id")
 
-    # Auto generate billnumber here
-    now = timezone.now()
-    current_year = now.year % 100
-    next_year = (now.year + 1) % 100
-    prefix = f"{current_year:02d}{next_year:02d}"
+    # ✅ Get billnumber from frontend
+    billnumber = data.get("billnumber")
 
-    latest = (
-        ERBilling.objects.filter(billnumber__startswith=prefix)
-        .order_by("-billnumber")
-        .first()
-    )
+    if not billnumber:
+        return Response({
+            "status": "error",
+            "message": "billnumber is required"
+        }, status=400)
 
-    if latest:
-        try:
-            last_num = int(latest.billnumber.split("/")[-1])
-        except:
-            last_num = 0
-    else:
-        last_num = 0
-
-    new_billnumber = f"{prefix}/{last_num + 1:06d}"
+    # ✅ Optional: Prevent duplicate bill numbers
+    if ERBilling.objects.filter(billnumber=billnumber).exists():
+        return Response({
+            "status": "error",
+            "message": "Bill number already exists"
+        }, status=400)
 
     serializer = ERBillingSerializer(data=data)
 
     if serializer.is_valid():
         serializer.save(
-            billnumber=new_billnumber,
+            billnumber=billnumber,  # ✅ use frontend value
             created_by=employee_id,
             created_date=timezone.now()
         )
@@ -448,7 +442,7 @@ def get_next_bill_number(request):
         start_year = (today.year - 1) % 100
         end_year = today.year % 100
 
-    prefix = f"{start_year:02d}{end_year:02d}"
+    prefix = f"{start_year:02d}{end_year:0d}"
 
     bills = ERBilling.objects.filter(
         billnumber__startswith=prefix
