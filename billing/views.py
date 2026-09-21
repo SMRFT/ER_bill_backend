@@ -78,7 +78,7 @@ def get_procedure_list(request):
     db = client["ER_Billing"]
     collection = db["er_procedurelist"]
 
-    procedurelist = list(collection.find({}, {"_id": 0}))
+    procedurelist = list(collection.find({"is_active": True}, {"_id": 0}))
     return JsonResponse(procedurelist, safe=False)
 
 # er_billing/views.py
